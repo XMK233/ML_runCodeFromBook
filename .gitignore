@@ -1,2 +1,4 @@
-*/.ipynb_checkpoints
+*.ipynb_checkpoints
 */data
+*data
+/大规模语言模型：从理论到实践/6-RL/trlx
