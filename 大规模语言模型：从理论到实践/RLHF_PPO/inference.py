@@ -1,7 +1,7 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from RLHF_PPO.config import Config
+from config import Config
 from peft import LoraConfig, PeftModel
-from RLHF_PPO.config import LoraArguments
+from config import LoraArguments
 
 
 class LoraPPOModel(PeftModel):

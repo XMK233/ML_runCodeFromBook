@@ -4,15 +4,15 @@ from dataclasses import dataclass, field
 
 class Config:
     # model 参数 ###########################
-    # 情感分析模型，下载地址https://huggingface.co/IDEA-CCNL/Erlangshen-Roberta-330M-Sentiment
+    # 情感分析模型，下载地址 https://huggingface.co/IDEA-CCNL/Erlangshen-Roberta-330M-Sentiment
     Sentiment_model = '/Users/minkexiu/Downloads/GitHub/ML_runCodeFromBook/大规模语言模型：从理论到实践/RLHF_PPO/trained_models/Erlangshen-Roberta-330M-Sentiment' # create_trained_models_path("Erlangshen-Roberta-330M-Sentiment")
     # 文本生成模型,下载地址 https://huggingface.co/Qwen/Qwen1.5-0.5B-Chat
     gpt_model = '/Users/minkexiu/Downloads/GitHub/ML_runCodeFromBook/大规模语言模型：从理论到实践/RLHF_PPO/trained_models/Qwen1.5-0.5B-Chat' # create_trained_models_path("Qwen1.5-0.5B-Chat")
     
-    data_path = "data/train_data.json"
+    data_path = "/Users/minkexiu/Documents/GitHub/ML_runCodeFromBook/大规模语言模型：从理论到实践/RLHF_PPO/data/train_data.json"
     save_lora_path = '/Users/minkexiu/Downloads/GitHub/ML_runCodeFromBook/大规模语言模型：从理论到实践/RLHF_PPO/trained_models/ppo/save_lora' # create_trained_models_path("ppo/save_lora") # "E:\\ai_model\\model\\ppo\\save_lora"
     save_v_head_path = '/Users/minkexiu/Downloads/GitHub/ML_runCodeFromBook/大规模语言模型：从理论到实践/RLHF_PPO/trained_models/ppo/v_head/pytorch_model.bin' # create_trained_models_path("ppo/v_head/pytorch_model.bin") # "E:\\ai_model\\model\\ppo\\v_head\\pytorch_model.bin"
-    device = "cuda:0" if torch.cuda.is_available() else "mps"
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     batch_size = 2
     epochs = 10
     lr = 0.001
@@ -31,6 +31,7 @@ class LoraArguments:
     lora_r: int = 2
     lora_alpha: int = 8
     lora_dropout: float = 0
+    ## xmk：这里就算直接赋值成列表，好像也没什么问题。
     lora_target_modules: List[str] = field(
         default_factory=lambda: ['k_proj',  'v_proj']
     )

@@ -4,25 +4,25 @@ from torch.utils.data import DataLoader
 from torch.optim import Adam
 from ppo import PPO
 
-from RLHF_PPO.model.actor_critic_model import ActorCriticLoraModel
-from RLHF_PPO.model.reward_model import RewardModel
-from RLHF_PPO.model.reference_model import ReferenceModel
-from RLHF_PPO.utils.data_load import CustomDataset
-from RLHF_PPO.utils.tools import Tools
+from model.actor_critic_model import ActorCriticLoraModel
+from model.reward_model import RewardModel
+from model.reference_model import ReferenceModel
+from utils.data_load import CustomDataset
+from utils.tools import Tools
 
 
 class TrainPpo:
     def __init__(self):
         self.config = Config()
         # 演员和评论家模型
-        self.actor_critic_model = ActorCriticLoraModel(self.config)
+        self.actor_critic_model = ActorCriticLoraModel(self.config) ## xmk：这个实际上就是一个lora模型。
         self.tokenizer = self.actor_critic_model.tokenizer
         # 获得演员和评论家模型优化器, 这里使用的是lora, 不优化全量数据
         self.actor_critic_opt = Adam(self.actor_critic_model.parameters(), lr=self.config.lr)
         # 参考模型
-        self.reference_model = ReferenceModel(self.config)
+        self.reference_model = ReferenceModel(self.config) ## xmk：是一个gpt模型。不是lora的。
         # 奖励模型
-        self.reward_model = RewardModel(self.config)
+        self.reward_model = RewardModel(self.config) ## xmk：是一个情感模型。
         # 训练数据
         dataset = CustomDataset(self.config.data_path, self.tokenizer)
         self.data_loader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True,

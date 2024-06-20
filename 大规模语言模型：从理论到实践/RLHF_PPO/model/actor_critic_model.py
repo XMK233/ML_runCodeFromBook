@@ -1,17 +1,17 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from RLHF_PPO.config import Config
-from RLHF_PPO.utils.tools import Tools
+from config import Config
+from utils.tools import Tools
 from peft import LoraConfig, get_peft_model, PeftModel
-from RLHF_PPO.config import LoraArguments
+from config import LoraArguments
 
 
 class LoraModel(PeftModel):
     def __init__(self, config: Config, model):
         lora_args = LoraArguments()
         lora_config = LoraConfig(
-            r=lora_args.lora_r,
-            lora_alpha=lora_args.lora_alpha,
+            r=lora_args.lora_r, ## 把秩降到这个数。
+            lora_alpha=lora_args.lora_alpha, ## 这个是一个扩张系数。
             target_modules=lora_args.lora_target_modules,
             lora_dropout=lora_args.lora_dropout,
             task_type="CAUSAL_LM",
@@ -38,7 +38,9 @@ class LoraModel(PeftModel):
 class ActorCriticLoraModel(torch.nn.Module):
     def __init__(self, config: Config):
         super().__init__()
+        ## xmk：加载一个原始的文本生成模型。
         model = AutoModelForCausalLM.from_pretrained(config.gpt_model).to(config.device).eval()
+        ##
         self.model = LoraModel(config, model)
         self.tokenizer = AutoTokenizer.from_pretrained(config.gpt_model)
 

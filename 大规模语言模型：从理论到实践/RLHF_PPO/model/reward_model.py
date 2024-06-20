@@ -1,5 +1,5 @@
 from transformers import BertForSequenceClassification, BertTokenizer
-from RLHF_PPO.config import Config
+from config import Config
 import torch
 import torch.nn as nn
 

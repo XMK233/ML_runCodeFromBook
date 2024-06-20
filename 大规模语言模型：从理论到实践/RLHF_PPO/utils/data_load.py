@@ -45,7 +45,7 @@ class CustomDataset(Dataset):
 
 
 if __name__ == '__main__':
-    from ..config import Config
+    from config import Config
     from transformers import AutoTokenizer
 
     config = Config()
