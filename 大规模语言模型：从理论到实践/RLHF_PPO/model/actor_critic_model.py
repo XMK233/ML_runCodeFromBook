@@ -41,7 +41,7 @@ class ActorCriticLoraModel(torch.nn.Module):
         ## xmk：加载一个原始的文本生成模型。
         model = AutoModelForCausalLM.from_pretrained(config.gpt_model).to(config.device).eval()
         ##
-        self.model = LoraModel(config, model)
+        self.model = LoraModel(config, model) ## xmk：我的理解就是ho，传入一些lora系列的参数，使得我们能够对原来的model里面的特定部分做lora
         self.tokenizer = AutoTokenizer.from_pretrained(config.gpt_model)
 
     def forward(self, input_ids, attention_mask, tools: Tools):
