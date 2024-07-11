@@ -34,6 +34,7 @@ class CustomDataset(Dataset):
         return [model_inputs.input_ids.tolist()[0], model_inputs.attention_mask.tolist()[0]]
 
     def collate_fn(self, batch):
+        ## 感觉这个函数是用来，把batch里面的每条数据，补齐到相同长度。
         max_length = max([len(i[0]) for i in batch])
         input_ids = []
         mask_attention = []
