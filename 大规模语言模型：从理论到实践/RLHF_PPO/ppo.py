@@ -9,11 +9,24 @@ class PPO:
         self.config = config
         self.actor_critic_opt = actor_critic_opt
 
-    def train(self, prompt_generate_ids, attention_mask, prob_refs, reward, tools: Tools):
+    def train(
+            self,
+            prompt_generate_ids, ## generate出来的回复。感觉回复得最像一句话。包括了prompt和纯回答的单词id。
+            attention_mask, ## （顾名思义）
+            prob_refs, ## 感觉应该是纯回答里各个单词的概率。这个概率怎么生成的呢：首先用 prompt_generate_ids 和对应的mask，送到reference_model的forward里面去得到logits，然后把logits
+                    ## 转为概率，再把 纯回答的单词id位置 对应的概率拿出来，就是 prob_refs。所以这里也是只有纯回答的。
+            reward, ## 感觉好像就是表示，各个纯回答的情感是正面还是负面。
+            tools: Tools
+    ):
         with torch.no_grad():
             _, old_values = self.actor_critic_model(prompt_generate_ids, attention_mask, tools)  # 计算每个token的价值
+            ## 这个old_values是用lora_model的forward生成的。
+            ## xmk：我实验了一下，lora_model的forward和reference_model的forward应该不是一回事。
+            ## 我原本以为，lora_model的forward就是其初始化的时候用的model的forward，也就是跟reference_model是一回事。
+            ## 但我把 lora_model 和 reference_model打出来，发现它们的结构还是有所不同。所以推测两个forward不是一回事。
+            ## 话说回来，如果是一回事，那还有什么意义，不就起不到对比的效果了嘛。
         for _ in range(self.config.ppo_epochs):
-            # 获得actor_critic模型新的probs和token对应的价值
+            # 获得 actor_critic 模型新的 probs 和 token 对应的价值。
             new_probs, new_values = self.actor_critic_model(prompt_generate_ids, attention_mask, tools)
             # 计算奖励值
             rewards, non_score_rewards = self.compute_rewards(reward, new_probs, prob_refs)  # 计算reward

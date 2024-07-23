@@ -34,8 +34,9 @@ class TrainPpo:
         for epoch in range(self.config.epochs):
             for batch_data in self.data_loader:
                 # 获得演员模型生成的结果(prompt_generate)和ids(prompt_generate_ids, generate_ids)
-                prompt_generate, prompt_generate_ids, generate_ids = self.actor_critic_model.actor_generate(
-                    batch_data[0])
+                prompt_generate_ids, prompt_generate, generate_ids = self.actor_critic_model.actor_generate(
+                    batch_data[0]
+                )
                 attention_mask = (prompt_generate_ids != self.tokenizer.pad_token_id)
                 generate_ids_mask = (generate_ids[:, :-1] != self.tokenizer.pad_token_id)
                 # 模型生成的token, 为什么减去1，因为最后一个字符是结束符
@@ -48,7 +49,14 @@ class TrainPpo:
                 # 获得参考模型probs
                 prob_refs = self.reference_model(prompt_generate_ids, attention_mask, tools)
                 # 获得上帝模型（评论家模型）的价值
-                self.ppo.train(prompt_generate_ids, attention_mask, prob_refs, reward, tools)
+                self.ppo.train(
+                    prompt_generate_ids, ## generate出来的回复。感觉回复得最像一句话。包括了prompt和纯回答的单词id。
+                    attention_mask, ## （顾名思义）
+                    prob_refs, ## 感觉应该是纯回答里各个单词的概率。这个概率怎么生成的呢：首先用 prompt_generate_ids 和对应的mask，送到forward里面去得到logits，然后把logits
+                    ## 转为概率，再把 纯回答的单词id位置 对应的概率拿出来，就是 prob_refs。所以这里也是只有纯回答的。
+                    reward, ## 感觉好像就是表示，各个纯回答的情感是正面还是负面。
+                    tools
+                )
         self.save_model()
 
     def save_model(self):
