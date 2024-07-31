@@ -27,9 +27,15 @@ class LoraModel(PeftModel):
                     param.requires_grad = True
 
     def forward(self, input_ids, attention_mask, tools: Tools):
-        res = super().forward(input_ids, attention_mask, output_hidden_states=True) ## 如果是返回了一个这个的话，就会
+        res = super().forward(input_ids, attention_mask, output_hidden_states=True)
+
+        ## res.hidden_states 就是每一个单词的，算是embedding吧。应该为1024维。
+        ## 所以这边就直接把这1024维用一个全连接层转换为1维。也就是把每一个单词的embedding从1024维压缩为1维。
         values = self.v_head(res.hidden_states[0]).squeeze(-1)[:, :-1]
         values = tools.filter_mask(values)
+
+        ## res.logits应该表示的是每一个输出的位置上，“为词表中各个单词的概率”。
+        ## 然后probs就是各个输出词的对应概率。
         probs = tools.probs_from_logits(res.logits[:, :-1, :], input_ids[:, 1:])
         probs = tools.filter_mask(probs)
         return probs, values

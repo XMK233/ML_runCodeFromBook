@@ -27,11 +27,25 @@ class PPO:
             ## 话说回来，如果是一回事，那还有什么意义，不就起不到对比的效果了嘛。
         for _ in range(self.config.ppo_epochs):
             # 获得 actor_critic 模型新的 probs 和 token 对应的价值。
+            ## 我这边看了一眼，感觉forward方法返回的probs，values
+            ## 中的probs，就是模型的原始forward方法返回的各个单词对应的logits；
+            ## 而values呢，则是模型的原始forward方法返回的各个单词的算是embedding的东西用全连接层映射成的1维变量。
             new_probs, new_values = self.actor_critic_model(prompt_generate_ids, attention_mask, tools)
             # 计算奖励值
+            ## 其实就是判断new_probs和probs_ref之间的差异，差异越大，reward越小。
+            ## 底下返回的non_score_rewards是原始的、每个单词对应的reward。
+            ## 而rewards变量，则是将non_score_rewards里面最后一个单词的reward加上【reward这个参数变量】得到的。
+            ## 总之这里代码写得有点糊涂，参数reward，返回还叫reward，整一个给我闹麻了。
             rewards, non_score_rewards = self.compute_rewards(reward, new_probs, prob_refs)  # 计算reward
-            loss = self.loss(new_probs=new_probs, old_values=old_values, new_values=new_values,
-                             rewards=rewards, old_probs=prob_refs)
+
+            ## 【TODO】计算损失。
+            loss = self.loss(
+                new_probs=new_probs, ## 被训练模型的，新的，模型的原始forward方法返回的各个单词对应的logits。
+                old_values=old_values, ## 被训练模型的，原来的，模型的原始forward方法返回的各个单词的算是embedding的东西用全连接层映射成的1维变量。
+                new_values=new_values, ## 被训练模型的，新的，模型的原始forward方法返回的各个单词的算是embedding的东西用全连接层映射成的1维变量。
+                rewards=rewards, ## 每一个单词的一个reward，前面算出来的，是最后一个单词加了【reward这个参数变量】得到的。算是用 old_probs new_probs 和【reward这个参数变量】算出来的。
+                old_probs=prob_refs, ## 参考模型的，原始forward方法返回的各个单词对应的logits。
+            )
 
             self.actor_critic_opt.zero_grad()
             loss.backward()
@@ -98,11 +112,17 @@ class PPO:
         rewards, non_score_rewards = [], []
         for score, prob, ref_prob in zip(scores, probs, ref_probs):
             kl = prob - ref_prob  # (seq_len, )
+
+            ## 首先算基础的reward，就是不掺入score的reward。
             non_score_reward = -self.config.kl_ctl_value * kl  # (seq_len, )
             non_score_rewards.append(non_score_reward)
+
+            ## 然后呢，复制一份reward，在这份里面的最后一位掺入score。
             reward = non_score_reward.clone()  # 前面每一个token的reward都来自KL惩罚
             reward[-1] += score  # 在最后一位加上人工给的reward
             rewards.append(reward)
+
+        ## 所以返回的部分是两部分，第一部分是掺入了score的、对于每一个词的奖励
         return rewards, non_score_rewards  # (batch, seq_len)
 
     @staticmethod
