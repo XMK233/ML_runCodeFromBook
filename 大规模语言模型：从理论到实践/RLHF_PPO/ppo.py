@@ -40,7 +40,7 @@ class PPO:
 
             ## 【TODO】计算损失。
             loss = self.loss(
-                new_probs=new_probs, ## 被训练模型的，新的，模型的原始forward方法返回的各个单词对应的logits。
+                new_probs=new_probs, ## 被训练模型的，新的，模型的原始forward方法返回的各个单词对应的logits。【修订】应该是概率而非logits，因为这一步的结果是有被log_softmax过的。下同。
                 old_values=old_values, ## 被训练模型的，原来的，模型的原始forward方法返回的各个单词的算是embedding的东西用全连接层映射成的1维变量。
                 new_values=new_values, ## 被训练模型的，新的，模型的原始forward方法返回的各个单词的算是embedding的东西用全连接层映射成的1维变量。
                 rewards=rewards, ## 每一个单词的一个reward，前面算出来的，是最后一个单词加了【reward这个参数变量】得到的。算是用 old_probs new_probs 和【reward这个参数变量】算出来的。
@@ -52,7 +52,14 @@ class PPO:
             self.actor_critic_opt.step()
             print(loss)
 
-    def loss(self, new_probs, old_values, new_values, rewards, old_probs):
+    def loss(
+        self,
+        new_probs,
+        old_values,
+        new_values,
+        rewards,
+        old_probs
+    ):
         """
         计算actor模型和评价模型的loss
         :param new_probs: actor模型生成的probs
@@ -83,11 +90,13 @@ class PPO:
                 advantages_reversed.append(last_gae_lam)
             advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
             returns = advantages + old_value  # Q值，当前token获得的奖励(真实的) + 未来获得的价值(这个是上帝视角，不包含当前token)
-            advantages = self.whiten(advantages)
-            advantages = advantages.detach()
-            value_clipped = torch.clamp(new_value,
-                                        old_value - self.config.cliprange_value,
-                                        old_value + self.config.cliprange_value)  # 截断防止训练废了
+            advantages = self.whiten(advantages) ## 总的来说就是归一化操作。
+            advantages = advantages.detach() ## 【detach有什么用】简单来说就是，从计算图中分离出来，这样一来梯度就不会被更新了。  https://zhuanlan.zhihu.com/p/682458294
+            value_clipped = torch.clamp(
+                new_value, ## input
+                old_value - self.config.cliprange_value, ## min
+                old_value + self.config.cliprange_value ## max
+            )  # 截断防止训练废了
             vf_loss1 = (new_value - returns) ** 2  # 上帝视角的价值减去Q值的误差，用于优化上帝模型
             vf_loss2 = (value_clipped - returns) ** 2
             vf_loss = torch.mean(torch.max(vf_loss2, vf_loss1))
