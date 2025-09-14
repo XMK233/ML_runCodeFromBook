@@ -5,3 +5,5 @@
 /大规模语言模型：从理论到实践/6-RL/rm_checkpoint
 .idea/
 *__pycache__
+*.png
+/HuggingFace扩散模型/saved_ddpm_model
