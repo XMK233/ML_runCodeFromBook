@@ -9,3 +9,4 @@
 /HuggingFace扩散模型/saved_ddpm_model
 /HuggingFace扩散模型/plan_1/saved_ddpm_model
 /HuggingFace扩散模型/plan_2/saved_ddpm_model
+*.pth
