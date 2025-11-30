@@ -148,7 +148,9 @@ class ClassConditionedUViT(nn.Module):
         self.pool3 = nn.Conv2d(128, 128, 3, 2, 1)
 
         # ViT 输入投影（共享）
-        self.vproj_in = nn.Conv2d(128, vit_dim, 1)
+        # 多尺度融合：在 p2(1/4) 与 p3(1/8) 两个尺度上构建 tokens
+        self.vproj_in = nn.Conv2d(128, vit_dim, 1)      # 用于 p3 尺度
+        self.vproj_in_p2 = nn.Conv2d(128, vit_dim, 1)   # 用于 p2 尺度
 
         # MoE 专家集合：每个专家一套 ViTBlock + LayerNorm + 输出投影
         self.num_experts = num_experts
@@ -184,11 +186,15 @@ class ClassConditionedUViT(nn.Module):
         )
         self.out = nn.Conv2d(64, 1, 1)
 
-        # 预计算位置编码（与原实现保持一致）
-        gh = img_sz[0] // 8
-        gw = img_sz[1] // 8
-        pe = build_2d_sincos(gh, gw, vit_dim)
-        self.register_buffer('pos_embed', pe.unsqueeze(0), persistent=False)
+        # 预计算位置编码（多尺度）
+        gh3 = img_sz[0] // 8
+        gw3 = img_sz[1] // 8
+        pe3 = build_2d_sincos(gh3, gw3, vit_dim)
+        self.register_buffer('pos_embed', pe3.unsqueeze(0), persistent=False)  # p3 尺度
+        gh2 = img_sz[0] // 4
+        gw2 = img_sz[1] // 4
+        pe2 = build_2d_sincos(gh2, gw2, vit_dim)
+        self.register_buffer('pos_embed_p2', pe2.unsqueeze(0), persistent=False)  # p2 尺度
 
     def forward(self, x, t, class_labels):
         bs, _, h, w = x.shape
@@ -204,12 +210,21 @@ class ClassConditionedUViT(nn.Module):
         d3 = self.down3(p2)
         p3 = self.pool3(d3)
 
-        # ViT tokens
-        vb = self.vproj_in(p3)
-        gh = vb.shape[2]
-        gw = vb.shape[3]
-        s = vb.flatten(2).transpose(1, 2)
-        s = s + self.pos_embed[:, : gh * gw, :].to(s.device)
+        # ViT tokens（多尺度）
+        # p3 尺度（1/8）
+        vb3 = self.vproj_in(p3)
+        gh3 = vb3.shape[2]
+        gw3 = vb3.shape[3]
+        s3 = vb3.flatten(2).transpose(1, 2)
+        s3 = s3 + self.pos_embed[:, : gh3 * gw3, :].to(s3.device)
+        # p2 尺度（1/4）
+        vb2 = self.vproj_in_p2(p2)
+        gh2 = vb2.shape[2]
+        gw2 = vb2.shape[3]
+        s2 = vb2.flatten(2).transpose(1, 2)
+        s2 = s2 + self.pos_embed_p2[:, : gh2 * gw2, :].to(s2.device)
+        # 拼接 tokens 进入专家模块，增强全局与局部的融合表示
+        s = torch.cat([s3, s2], dim=1)
 
         # 门控权重（per-sample）
         if t.dim() == 0:
@@ -224,13 +239,23 @@ class ClassConditionedUViT(nn.Module):
 
         # 专家前向并加权融合
         yb_sum = None
+        len3 = gh3 * gw3
+        len2 = gh2 * gw2
         for e, expert in enumerate(self.experts):
             se = s
             for blk in expert['blocks']:
                 se = blk(se)
             se = expert['norm'](se)
-            se = se.transpose(1, 2).reshape(bs, -1, gh, gw)
-            yb_e = expert['proj_out'](se)  # [bs, 128, gh, gw]
+            # 拆回两个尺度
+            se3 = se[:, :len3, :]  # [bs, len3, vit_dim]
+            se2 = se[:, len3:len3 + len2, :]  # [bs, len2, vit_dim]
+            se3_img = se3.transpose(1, 2).reshape(bs, -1, gh3, gw3)
+            se2_img = se2.transpose(1, 2).reshape(bs, -1, gh2, gw2)
+            yb3_e = expert['proj_out'](se3_img)  # [bs, 128, gh3, gw3]
+            yb2_e = expert['proj_out'](se2_img)  # [bs, 128, gh2, gw2]
+            # 将 p2 的输出下采样到 p3 的分辨率后融合
+            yb2_e_down = F.interpolate(yb2_e, size=(gh3, gw3), mode='bilinear', align_corners=False)
+            yb_e = yb3_e + yb2_e_down
             w_e = gate_w[:, e].view(bs, 1, 1, 1)
             yb_e = yb_e * w_e
             yb_sum = yb_e if yb_sum is None else (yb_sum + yb_e)
@@ -276,55 +301,55 @@ else:
     net_ema.load_state_dict(net.state_dict())
 ema_decay = 0.999
 
-# losses = []
-# for epoch in range(n_epochs):
-#     for x, y in tqdm(train_dataloader):
-#         x = x.to(device) * 2 - 1
-#         y = y.to(device)
-#         noise = torch.randn_like(x)
-#         timesteps = torch.randint(0, 999, (x.shape[0],)).long().to(device)
-#         noisy_x = noise_scheduler.add_noise(x, noise, timesteps)
-#         pred = net(noisy_x, timesteps, y)
-#         velocity = noise_scheduler.get_velocity(x, noise, timesteps)
-#         alphas = noise_scheduler.alphas_cumprod[timesteps].to(x.device).view(-1, 1, 1, 1)
-#         snr = alphas / (1 - alphas)
-#         weight = torch.sqrt(torch.clamp(snr, max=5.0))
-#         loss = (weight * (pred - velocity) ** 2).mean()
-#         opt.zero_grad()
-#         loss.backward()
-#         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
-#         opt.step()
-#         with torch.no_grad():
-#             for p, p_ema in zip(net.parameters(), net_ema.parameters()):
-#                 p_ema.data.mul_(ema_decay).add_(p.data, alpha=1 - ema_decay)
-#         losses.append(loss.item())
-#     avg_loss = sum(losses[-100:]) / 100
-#     print(f'Finished epoch {epoch}. Average of the last 100 loss values: {avg_loss:05f}')
-#     if (epoch + 1) % 5 == 0:
-#         xg = torch.randn(3 * 2, 1, img_sz[0], img_sz[1]).to(device)
-#         yg = torch.tensor([[i] * 3 for i in range(2)]).flatten().to(device)
-#         ddim = DDIMScheduler.from_config(noise_scheduler.config)
-#         ddim.set_timesteps(60)
-#         for i, t in tqdm(enumerate(ddim.timesteps)):
-#             with torch.no_grad():
-#                 net_ema.eval()
-#                 residual_cond = net_ema(xg, t.to(xg.device), yg)
-#                 drop_mask = torch.rand_like(yg.float()) < 0.1
-#                 yg_uncond = yg.clone()
-#                 yg_uncond[drop_mask] = 0
-#                 residual_uncond = net_ema(xg, t.to(xg.device), yg_uncond)
-#                 guidance_scale = 2.0
-#                 residual = residual_uncond + guidance_scale * (residual_cond - residual_uncond)
-#             xg = ddim.step(residual, t, xg).prev_sample
-#         out_name = os.path.join(os.path.dirname(__file__), f'samples_uvit_bw_epoch{epoch+1}.png')
-#         torchvision.utils.save_image(
-#             xg.detach().cpu().clip(-1, 1),
-#             out_name,
-#             nrow=8,
-#             normalize=True,
-#             value_range=(-1, 1)
-#         )
-# plt.plot(losses)
+losses = []
+for epoch in range(n_epochs):
+    for x, y in tqdm(train_dataloader):
+        x = x.to(device) * 2 - 1
+        y = y.to(device)
+        noise = torch.randn_like(x)
+        timesteps = torch.randint(0, 999, (x.shape[0],)).long().to(device)
+        noisy_x = noise_scheduler.add_noise(x, noise, timesteps)
+        pred = net(noisy_x, timesteps, y)
+        velocity = noise_scheduler.get_velocity(x, noise, timesteps)
+        alphas = noise_scheduler.alphas_cumprod[timesteps].to(x.device).view(-1, 1, 1, 1)
+        snr = alphas / (1 - alphas)
+        weight = torch.sqrt(torch.clamp(snr, max=5.0))
+        loss = (weight * (pred - velocity) ** 2).mean()
+        opt.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
+        opt.step()
+        with torch.no_grad():
+            for p, p_ema in zip(net.parameters(), net_ema.parameters()):
+                p_ema.data.mul_(ema_decay).add_(p.data, alpha=1 - ema_decay)
+        losses.append(loss.item())
+    avg_loss = sum(losses[-100:]) / 100
+    print(f'Finished epoch {epoch}. Average of the last 100 loss values: {avg_loss:05f}')
+    if (epoch + 1) % 5 == 0:
+        xg = torch.randn(3 * 2, 1, img_sz[0], img_sz[1]).to(device)
+        yg = torch.tensor([[i] * 3 for i in range(2)]).flatten().to(device)
+        ddim = DDIMScheduler.from_config(noise_scheduler.config)
+        ddim.set_timesteps(60)
+        for i, t in tqdm(enumerate(ddim.timesteps)):
+            with torch.no_grad():
+                net_ema.eval()
+                residual_cond = net_ema(xg, t.to(xg.device), yg)
+                drop_mask = torch.rand_like(yg.float()) < 0.1
+                yg_uncond = yg.clone()
+                yg_uncond[drop_mask] = 0
+                residual_uncond = net_ema(xg, t.to(xg.device), yg_uncond)
+                guidance_scale = 2.0
+                residual = residual_uncond + guidance_scale * (residual_cond - residual_uncond)
+            xg = ddim.step(residual, t, xg).prev_sample
+        out_name = os.path.join(os.path.dirname(__file__), f'samples_uvit_bw_epoch{epoch+1}.png')
+        torchvision.utils.save_image(
+            xg.detach().cpu().clip(-1, 1),
+            out_name,
+            nrow=8,
+            normalize=True,
+            value_range=(-1, 1)
+        )
+plt.plot(losses)
 
 # 保存模型，文件名基于 __file__
 torch.save({

@@ -82,44 +82,77 @@ def save_grid(x, out_path, nrow):
 
 def main():
     device = 'mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu'
-
     # Paths to the two training scripts
     base_dir = os.path.dirname(__file__)
-    file_12 = os.path.join(base_dir, '12_鼎-基于10_新尝试.py')
-    file_10 = os.path.join(base_dir, '10_井_cp2-基于10_生成大图.py')
-
-    # Resolve checkpoint paths based on script filenames
-    base_12 = os.path.splitext(os.path.basename(file_12))[0]
-    base_10 = os.path.splitext(os.path.basename(file_10))[0]
-    ckpt_12 = os.path.join(base_dir, f"{base_12}_model.pth")
-    ckpt_10 = os.path.join(base_dir, f"{base_10}_model.pth")
-
-    # Load modules
-    mod_12 = load_module_from_path(file_12)
-    mod_10 = load_module_from_path(file_10)
-
-    # Load checkpoints and build models
-    state_12 = load_checkpoint(ckpt_12, device)
-    state_10 = load_checkpoint(ckpt_10, device)
-    model_12 = build_model(mod_12, state_12, device)
-    model_10 = build_model(mod_10, state_10, device)
-
     # Specify the 4 categories to compare (edit as needed)
     categories = [2, 5, 8, 12]  # four class indices common to both
     num_per_cat = 4
     img_sz = (256, 256)
+    
+    for xx in [
+        '12_鼎-基于10_新尝试.py', 
+        '10_井_cp2-基于10_生成大图.py', 
+        "13_震-基于12_MoE负载均衡.py",
+    ]:
+        file_12 = os.path.join(base_dir, xx)
+        base_12 = os.path.splitext(os.path.basename(file_12))[0]
+        ckpt_12 = os.path.join(base_dir, f"{base_12}_model.pth")
+        # Load modules
+        mod_12 = load_module_from_path(file_12)
+        # Load checkpoints and build models
+        state_12 = load_checkpoint(ckpt_12, device)
+        model_12 = build_model(mod_12, state_12, device)
+        # Generate grids
+        x12 = generate_grid(model_12, categories, num_per_cat=num_per_cat, img_sz=img_sz, device=device)
+        # Save outputs side by side for comparison
+        out_12 = os.path.join(base_dir, f"{base_12}_compare.png")
+        save_grid(x12, out_12, nrow=num_per_cat)
 
-    # Generate grids
-    x12 = generate_grid(model_12, categories, num_per_cat=num_per_cat, img_sz=img_sz, device=device)
-    x10 = generate_grid(model_10, categories, num_per_cat=num_per_cat, img_sz=img_sz, device=device)
 
-    # Save outputs side by side for comparison
-    out_12 = os.path.join(base_dir, f"{base_12}_compare.png")
-    out_10 = os.path.join(base_dir, f"{base_10}_compare.png")
-    save_grid(x12, out_12, nrow=num_per_cat)
-    save_grid(x10, out_10, nrow=num_per_cat)
-    print(f"Saved MoE model grid: {out_12}")
-    print(f"Saved baseline model grid: {out_10}")
+
+
+
+
+
+
+
+
+    
+    # file_12 = os.path.join(base_dir, )
+    # file_10 = os.path.join(base_dir)
+
+    # # Resolve checkpoint paths based on script filenames
+    # base_12 = os.path.splitext(os.path.basename(file_12))[0]
+    # base_10 = os.path.splitext(os.path.basename(file_10))[0]
+    # ckpt_12 = os.path.join(base_dir, f"{base_12}_model.pth")
+    # ckpt_10 = os.path.join(base_dir, f"{base_10}_model.pth")
+
+    # # Load modules
+    # mod_12 = load_module_from_path(file_12)
+    # mod_10 = load_module_from_path(file_10)
+
+    # # Load checkpoints and build models
+    # state_12 = load_checkpoint(ckpt_12, device)
+    # state_10 = load_checkpoint(ckpt_10, device)
+    # model_12 = build_model(mod_12, state_12, device)
+    # model_10 = build_model(mod_10, state_10, device)
+
+    # # Specify the 4 categories to compare (edit as needed)
+    # categories = [2, 5, 8, 12]  # four class indices common to both
+    # num_per_cat = 4
+    # img_sz = (256, 256)
+
+    # # Generate grids
+    # x12 = generate_grid(model_12, categories, num_per_cat=num_per_cat, img_sz=img_sz, device=device)
+    # x10 = generate_grid(model_10, categories, num_per_cat=num_per_cat, img_sz=img_sz, device=device)
+
+    # # Save outputs side by side for comparison
+    # out_12 = os.path.join(base_dir, f"{base_12}_compare.png")
+    # out_10 = os.path.join(base_dir, f"{base_10}_compare.png")
+    # save_grid(x12, out_12, nrow=num_per_cat)
+    # save_grid(x10, out_10, nrow=num_per_cat)
+    # print(f"Saved MoE model grid: {out_12}")
+    # print(f"Saved baseline model grid: {out_10}")
 
 
 if __name__ == '__main__':

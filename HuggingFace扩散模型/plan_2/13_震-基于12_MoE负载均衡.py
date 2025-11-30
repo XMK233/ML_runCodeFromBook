@@ -221,6 +221,9 @@ class ClassConditionedUViT(nn.Module):
         gate_in = torch.cat([p3_pool, c_feat, t_feat], dim=1)
         gate_logits = self.gate(gate_in)
         gate_w = torch.softmax(gate_logits, dim=-1)  # [bs, num_experts]
+        # 记录门控权重供训练阶段的负载均衡辅助损失使用
+        # 注意：不 detach，让该辅助损失反向传播到门控网络，促进均衡路由
+        self.last_gate_w = gate_w
 
         # 专家前向并加权融合
         yb_sum = None
@@ -289,7 +292,20 @@ ema_decay = 0.999
 #         alphas = noise_scheduler.alphas_cumprod[timesteps].to(x.device).view(-1, 1, 1, 1)
 #         snr = alphas / (1 - alphas)
 #         weight = torch.sqrt(torch.clamp(snr, max=5.0))
+#         # 基础损失：v-pred + SNR 加权
 #         loss = (weight * (pred - velocity) ** 2).mean()
+
+#         # 负载均衡 Auxiliary Loss（门控的均衡正则）
+#         # 原理：统计一个 batch 中各专家的平均路由概率分布 mean_w，
+#         #      通过将 mean_w 与均匀分布 U 之间的 KL 距离作为正则项，
+#         #      逼近 mean_w → U，从而让专家使用更均衡，避免某些专家过载或长期闲置。
+#         # 功效：提升训练稳定性与泛化能力，减少单专家过拟合。
+#         lb_coef = 0.01  # 负载均衡损失权重，可按需调整
+#         if hasattr(net, 'last_gate_w') and net.last_gate_w is not None:
+#             mean_w = net.last_gate_w.mean(dim=0)  # [num_experts]
+#             uniform = torch.full_like(mean_w, 1.0 / net.num_experts)
+#             aux_loss = F.kl_div(mean_w.log(), uniform, reduction='batchmean')
+#             loss = loss + lb_coef * aux_loss
 #         opt.zero_grad()
 #         loss.backward()
 #         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
